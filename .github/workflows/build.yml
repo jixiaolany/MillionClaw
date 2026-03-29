@@ -4,29 +4,18 @@ on:
   push:
     branches: [ master, main ]
   workflow_dispatch:
-  pull_request:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '10.23.0'
-  OPENCLAW_NPM_PACKAGE: 'openclaw'
 
 jobs:
-  build-from-npm:
+  build:
     runs-on: windows-latest
-    if: github.event_name != 'pull_request'
     
     steps:
-    - name: Checkout minimal repo
+    - name: Checkout
       uses: actions/checkout@v4
       with:
-        sparse-checkout: |
-          README.md
-          CLAUDE.md
-          VISION.md
-          LICENSE
-          docs/
-        sparse-checkout-cone-mode: false
         fetch-depth: 1
     
     - name: Setup Node.js ${{ env.NODE_VERSION }}
@@ -34,73 +23,47 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
     
-    - name: Install OpenClaw CLI
+    - name: Install OpenClaw
       run: npm install -g openclaw@latest
     
-    - name: Verify OpenClaw installation
-      shell: pwsh
+    - name: Verify
       run: |
         openclaw --version
-        where.exe openclaw
     
-    - name: Create MillionClaw package
+    - name: Create package
       shell: pwsh
       run: |
-        New-Item -ItemType Directory -Force -Path millionclaw-package | Out-Null
-        
-        @'
-@echo off
-title MillionClaw
-openclaw start
-'@ | Out-File -FilePath millionclaw-package\start.bat -Encoding ASCII
-        
-        @'
-@echo off
-echo ========================================
-echo   MillionClaw - OpenClaw Desktop
-echo ========================================
-echo.
-openclaw %*
-'@ | Out-File -FilePath millionclaw-package\millionclaw.bat -Encoding ASCII
-        
-        @'
-MillionClaw (百万爪)
-=====================
-
-Your OpenClaw Desktop Companion
-
-How to use:
-1. Make sure Node.js 22+ is installed
-2. Double-click start.bat to launch
-3. Or use millionclaw.bat for command line
-
-For more info: https://github.com/jixiaolany/MillionClaw
-'@ | Out-File -FilePath millionclaw-package\README.txt -Encoding ASCII
-        
-        "MillionClaw vlatest" | Out-File -FilePath millionclaw-package\version.txt -Encoding ASCII
-        
-        Get-ChildItem millionclaw-package | Format-Table Name, Length
+        New-Item -ItemType Directory -Force -Path millionclaw | Out-Null
+        "MillionClaw vlatest - OpenClaw Desktop" | Out-File millionclaw/version.txt -Encoding ASCII
+        "@echo off" | Out-File millionclaw/start.bat -Encoding ASCII
+        "openclaw start" | Out-File millionclaw/start.bat -Encoding ASCII -Append
+        "MillionClaw - See README.md" | Out-File millionclaw/README.txt -Encoding ASCII
+        Copy-Item README.md millionclaw/
+        Compress-Archive -Path millionclaw -DestinationPath millionclaw.zip -Force
     
-    - name: Package
-      shell: pwsh
-      run: |
-        Compress-Archive -Path millionclaw-package\* -DestinationPath millionclaw-windows.zip -Force
-        Get-ChildItem *.zip | ForEach-Object { Write-Host "$($_.Name): $([math]::Round($_.Length/1MB, 2)) MB" }
-    
-    - name: Upload artifacts
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: millionclaw-windows-npm
-        path: millionclaw-windows.zip
+        name: millionclaw-windows
+        path: millionclaw.zip
         retention-days: 30
 
-    - name: Create GitHub Release
-      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Download
+      uses: actions/download-artifact@v4
+      with:
+        name: millionclaw-windows
+        path: .
+    
+    - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          millionclaw-windows.zip
-        generate_release_notes: true
+        files: millionclaw.zip
         prerelease: true
         tag_name: v0.1.0
         name: MillionClaw v0.1.0
@@ -111,58 +74,15 @@ For more info: https://github.com/jixiaolany/MillionClaw
           
           ### Quick Start
           1. Download and extract the ZIP
-          2. Double-click `start.bat`
+          2. Double-click start.bat
           3. Enjoy your AI assistant!
           
           ### Requirements
           - Windows 10+ (x64)
-          - Node.js 22+ (will auto-install if missing)
+          - Node.js 22+
           
           ### Learn More
           - GitHub: https://github.com/jixiaolany/MillionClaw
           - Docs: https://docs.openclaw.ai
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-from-source:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
-    
-    - name: Setup Node.js ${{ env.NODE_VERSION }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-    
-    - name: Install pnpm
-      run: npm install -g pnpm@${{ env.PNPM_VERSION }}
-    
-    - name: Install dependencies
-      run: pnpm install --frozen-lockfile=false 2>&1 | tail -20
-    
-    - name: Build
-      run: |
-        echo "=== Attempting build ==="
-        pnpm run build:docker 2>&1 || {
-          echo "Build failed, checking dist..."
-          if [ -d "dist" ]; then
-            echo "dist found!"
-            ls -la dist/
-          fi
-        }
-      continue-on-error: true
-    
-    - name: Report status
-      run: |
-        echo "=== Build attempt completed ==="
-        if [ -d "dist" ]; then
-          echo "dist directory exists"
-          ls -la dist/
-        else
-          echo "No dist directory - source build not successful"
-        fi

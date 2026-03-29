@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
   PNPM_VERSION: '10.23.0'
   OPENCLAW_NPM_PACKAGE: 'openclaw'
 

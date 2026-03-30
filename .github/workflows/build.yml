@@ -64,7 +64,7 @@ jobs:
         Write-Host "SUCCESS: millionclaw.exe created, size: $([math]::Round($size, 2)) MB"
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: millionclaw-windows
         path: millionclaw.exe

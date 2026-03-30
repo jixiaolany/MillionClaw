@@ -27,53 +27,47 @@ jobs:
     - name: Install pnpm
       run: npm install -g pnpm@${{ env.PNPM_VERSION }}
     
-    - name: Install dependencies
+    - name: Install dependencies (skip scripts to avoid vite build errors)
       shell: pwsh
-      run: pnpm install --frozen-lockfile=false
+      run: pnpm install --frozen-lockfile=false --ignore-scripts
     
-    - name: Build OpenClaw
+    - name: Build OpenClaw with tsdown
       shell: pwsh
-      run: pnpm build
+      run: pnpm exec tsdown
     
-    - name: Verify dist exists
+    - name: Verify dist
       shell: pwsh
       run: |
         if (Test-Path dist) {
           Write-Host "dist folder exists"
-          Get-ChildItem dist | Select-Object Name, Length | Format-Table
+          Get-ChildItem dist -File | Measure-Object -Property Length -Sum | ForEach-Object {
+            Write-Host "Total size: $([math]::Round($_.Sum/1MB, 2)) MB"
+          }
         } else {
-          Write-Host "ERROR: dist folder not found after build!"
+          Write-Host "ERROR: dist not found!"
           exit 1
         }
     
-    - name: Package with pkg
+    - name: Install pkg
       shell: pwsh
-      run: |
-        pnpm add -g pkg
-        pkg openclaw.mjs --targets node22-win-x64 --output millionclaw.exe --no-bytecode --public --compress
+      run: npm install -g pkg
     
-    - name: Check EXE status
+    - name: Package EXE
       shell: pwsh
       run: |
-        if (Test-Path millionclaw.exe) {
-          $size = (Get-Item millionclaw.exe).Length / 1MB
-          Write-Host "SUCCESS: millionclaw.exe created, size: $([math]::Round($size, 2)) MB"
-        } else {
-          Write-Host "Creating launcher package..."
-          New-Item -ItemType Directory -Force -Path millionclaw-dist | Out-Null
-          "@echo off" | Out-File millionclaw-dist/start.bat -Encoding ASCII
-          "openclaw start" | Out-File millionclaw-dist/start.bat -Encoding ASCII -Append
-          Copy-Item README.md millionclaw-dist/
-          Compress-Archive -Path millionclaw-dist -DestinationPath millionclaw-windows.zip -Force
+        pkg dist/index.js --targets node22-win-x64 --output millionclaw.exe --public --compress
+        if (-not (Test-Path millionclaw.exe)) {
+          Write-Host "ERROR: millionclaw.exe not created"
+          exit 1
         }
+        $size = (Get-Item millionclaw.exe).Length / 1MB
+        Write-Host "SUCCESS: millionclaw.exe created, size: $([math]::Round($size, 2)) MB"
     
-    - name: Upload
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: millionclaw-windows
-        path: |
-          millionclaw.exe
-          millionclaw-windows.zip
+        path: millionclaw.exe
         retention-days: 30
 
   release:
@@ -94,9 +88,7 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          ./artifacts/millionclaw.exe
-          ./artifacts/millionclaw-windows.zip
+        files: ./artifacts/millionclaw.exe
         prerelease: true
         tag_name: v0.1.0
         name: MillionClaw v0.1.0
@@ -104,10 +96,6 @@ jobs:
           ## MillionClaw (Bai Wan Zhua) - First Release
           
           A user-friendly OpenClaw desktop companion for Windows.
-          
-          ### Downloads
-          - **millionclaw.exe** - Standalone executable
-          - **millionclaw-windows.zip** - Launcher package (requires Node.js)
           
           ### Quick Start
           1. Download and run millionclaw.exe

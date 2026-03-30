@@ -7,7 +7,6 @@ on:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '9'
 
 jobs:
   build:
@@ -25,46 +24,70 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
     
     - name: Install pnpm
-      run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+      run: npm install -g pnpm
     
-    - name: Install dependencies (skip scripts to avoid vite build errors)
-      shell: pwsh
-      run: pnpm install --frozen-lockfile=false --ignore-scripts
+    - name: Install deps
+      run: pnpm install --ignore-scripts
     
-    - name: Build OpenClaw with tsdown
-      shell: pwsh
+    - name: Build OpenClaw
       run: pnpm exec tsdown
     
     - name: Verify dist
-      shell: pwsh
       run: |
-        if (Test-Path dist) {
-          $size = (Get-ChildItem dist -File | Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host "dist exists: $([math]::Round($size, 2)) MB"
+        echo "=== Checking dist ==="
+        if (Test-Path dist/index.js) {
+          $size = (Get-Item dist/index.js).Length
+          echo "dist/index.js exists: $([math]::Round($size/1MB, 2)) MB"
         } else {
-          Write-Host "ERROR: dist not found!"
+          echo "dist/index.js NOT FOUND"
           exit 1
         }
     
     - name: Install pkg
       run: npm install -g pkg
     
-    - name: Package EXE (use node18 target for compatibility)
-      shell: pwsh
+    - name: Package EXE
       run: |
-        pkg dist/index.js --targets node18-win-x64 --public --compress --output millionclaw.exe
-        if (-not (Test-Path millionclaw.exe)) {
-          Write-Host "ERROR: millionclaw.exe not created"
+        echo "=== Packaging EXE ==="
+        pkg dist/index.js --targets node18-win-x64 --output millionclaw.exe
+        if (Test-Path millionclaw.exe) {
+          $size = (Get-Item millionclaw.exe).Length
+          echo "SUCCESS: millionclaw.exe created: $([math]::Round($size/1MB, 2)) MB"
+        } else {
+          echo "FAILED: millionclaw.exe not created"
           exit 1
         }
-        $size = (Get-Item millionclaw.exe).Length / 1MB
-        Write-Host "SUCCESS: millionclaw.exe created, size: $([math]::Round($size, 2)) MB"
     
-    - name: Upload artifact
+    - name: Create package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path millionclaw-package | Out-Null
+        Copy-Item millionclaw.exe millionclaw-package/
+        @'
+MillionClaw (百万爪)
+===================
+OpenClaw Desktop for Windows
+
+How to use:
+1. Double-click millionclaw.exe
+2. Or run: millionclaw.exe start
+
+Requirements:
+- Windows 10+ (x64)
+- Node.js 18+ (bundled)
+
+Learn more: https://github.com/jixiaolany/MillionClaw
+'@ | Out-File millionclaw-package/README.txt -Encoding ASCII
+        Copy-Item README.md millionclaw-package/ -ErrorAction SilentlyContinue
+        Compress-Archive -Path millionclaw-package -DestinationPath millionclaw-windows.zip -Force
+        $size = (Get-Item millionclaw-windows.zip).Length
+        echo "Package created: $([math]::Round($size/1MB, 2)) MB"
+    
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: millionclaw-windows
-        path: millionclaw.exe
+        path: millionclaw-windows.zip
         retention-days: 30
 
   release:
@@ -77,30 +100,13 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: millionclaw-windows
-        path: ./artifacts
-    
-    - name: List files
-      run: ls -la ./artifacts/
+        path: .
     
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: ./artifacts/millionclaw.exe
+        files: millionclaw-windows.zip
         prerelease: true
-        tag_name: v0.1.0
-        name: MillionClaw v0.1.0
-        body: |
-          ## MillionClaw (Bai Wan Zhua) - First Release
-          
-          A user-friendly OpenClaw desktop companion for Windows.
-          
-          ### Quick Start
-          1. Download and run millionclaw.exe
-          2. Configure your OpenClaw gateway
-          3. Enjoy your AI assistant!
-          
-          ### Learn More
-          - GitHub: https://github.com/jixiaolany/MillionClaw
-          - Docs: https://docs.openclaw.ai
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

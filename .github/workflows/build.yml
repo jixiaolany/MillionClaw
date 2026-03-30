@@ -39,23 +39,21 @@ jobs:
       shell: pwsh
       run: |
         if (Test-Path dist) {
-          Write-Host "dist folder exists"
-          Get-ChildItem dist -File | Measure-Object -Property Length -Sum | ForEach-Object {
-            Write-Host "Total size: $([math]::Round($_.Sum/1MB, 2)) MB"
-          }
+          $size = (Get-ChildItem dist -File | Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host "dist exists: $([math]::Round($size, 2)) MB"
         } else {
           Write-Host "ERROR: dist not found!"
           exit 1
         }
     
-    - name: Install pkg
+    - name: Install pkg as dev dependency
       shell: pwsh
-      run: npm install -g pkg
+      run: pnpm add -D pkg
     
-    - name: Package EXE
+    - name: Package EXE (use node18 target for compatibility)
       shell: pwsh
       run: |
-        pkg dist/index.js --targets node22-win-x64 --output millionclaw.exe --public --compress
+        node node_modules/.bin/pkg dist/index.js --targets node18-win-x64 --public --compress --output millionclaw.exe
         if (-not (Test-Path millionclaw.exe)) {
           Write-Host "ERROR: millionclaw.exe not created"
           exit 1

@@ -46,14 +46,13 @@ jobs:
           exit 1
         }
     
-    - name: Install pkg as dev dependency
-      shell: pwsh
-      run: pnpm add -D pkg
+    - name: Install pkg
+      run: npm install -g pkg
     
     - name: Package EXE (use node18 target for compatibility)
       shell: pwsh
       run: |
-        node node_modules/.bin/pkg dist/index.js --targets node18-win-x64 --public --compress --output millionclaw.exe
+        pkg dist/index.js --targets node18-win-x64 --public --compress --output millionclaw.exe
         if (-not (Test-Path millionclaw.exe)) {
           Write-Host "ERROR: millionclaw.exe not created"
           exit 1
